@@ -36,7 +36,7 @@ class BotRunner(object):
             await bot.reply_to(
                 message,
                 "Please send me a keybox.xml, and I will check if it is valid.\n\n"
-                "Github: https://github.com/KimmyXYC/KeyboxChecker.git",
+                "Forked from KimmyXYC, edited by @rafareborn and daboynb",
                 disable_web_page_preview=True
             )
 
@@ -48,6 +48,20 @@ class BotRunner(object):
             if message.document.file_size > 20 * 1024:
                 await bot.reply_to(message, "File size is too large")
                 return
+            await event.keybox_check(bot, message, message.document)
+            
+        @bot.message_handler(content_types=['document'], chat_types=['group', 'supergroup'])
+        async def handle_keybox_group(message: types.Message):
+            if message.document.mime_type != 'application/xml' and message.document.mime_type != 'text/xml':
+                return
+            if message.document.file_size > 20 * 1024:
+                await bot.reply_to(message, "File size is too large")
+                return
+
+            reply_message = (
+                f"Analyzing file uploaded by @{message.from_user.username} in the group... "
+            )
+            await bot.reply_to(message, reply_message)
             await event.keybox_check(bot, message, message.document)
 
         @bot.message_handler(commands=['check'])

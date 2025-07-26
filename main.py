@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 
 from dotenv import load_dotenv
@@ -14,8 +15,12 @@ logger.remove()
 print("从配置文件中读取到的DEBUG为", settings.app.debug)
 handler_id = logger.add(sys.stderr, level="INFO" if not settings.app.debug else "DEBUG")
 # 添加文件写出
+
+# Create logs directory if it doesn't exist
+os.makedirs("logs", exist_ok=True)
+
 logger.add(
-    sink="run.log",
+    sink="logs/bot.log",  # Changed from "run.log"
     format="{time} - {level} - {message}",
     level="INFO",
     rotation="100 MB",
