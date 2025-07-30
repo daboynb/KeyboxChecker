@@ -8,4 +8,5 @@ services:
     volumes:
       - ./conf_dir:/app/conf_dir
       - ./logs:/app/logs
+      - ./leaks.txt:/app/leaks.txt
     restart: unless-stopped

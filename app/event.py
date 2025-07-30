@@ -20,6 +20,9 @@ import uuid
 # Define the URL to fetch banned serial numbers
 BANNED_SERIALS_URL = "https://raw.githubusercontent.com/daboynb/autojson/refs/heads/main/banned.txt"
 
+# Path to the leaks.txt file
+LEAKS_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "leaks.txt")
+
 async def fetch_banned_serials():
     """
     Fetches the list of banned serial numbers from a remote URL.
@@ -38,6 +41,25 @@ async def fetch_banned_serials():
             # Split the text by lines and remove any empty lines
             banned_serials = [line.strip().lower() for line in text.splitlines() if line.strip()]
             return banned_serials
+
+def load_leaked_serials():
+    """
+    Loads the list of leaked serial numbers from the leaks.txt file.
+
+    Returns:
+        list of str: List containing leaked serial numbers.
+
+    Raises:
+        Exception: If the file cannot be read or is invalid.
+    """
+    try:
+        with open(LEAKS_FILE_PATH, 'r', encoding='utf-8') as file:
+            # Split the text by lines and remove any empty lines
+            leaked_serials = [line.strip().lower() for line in file.readlines() if line.strip()]
+            return leaked_serials
+    except Exception as e:
+        logger.error(f"Failed to load leaked serials: {e}")
+        return []
 
 async def load_from_url():
     """
@@ -179,6 +201,7 @@ async def keybox_check(bot, message, document):
     6. Checks against the revocation list.
     7. Determines the type of root certificate.
     8. Validates overall keychain integrity.
+    9. Checks if the serial number is in the leaks.txt file.
 
     Args:
         bot: The bot instance used to interact with the messaging platform.
@@ -198,6 +221,14 @@ async def keybox_check(bot, message, document):
         logger.error(f"Failed to fetch banned serials: {e}")
         await bot.reply_to(message, "Failed to load the list of banned serial numbers.")
         return
+        
+    # Load the list of leaked serial numbers
+    try:
+        leaked_serials = load_leaked_serials()
+        logger.info(f"Loaded {len(leaked_serials)} leaked serial numbers.")
+    except Exception as e:
+        logger.error(f"Failed to load leaked serials: {e}")
+        leaked_serials = []
 
     # Download the file from the provided document
     try:
@@ -244,6 +275,9 @@ async def keybox_check(bot, message, document):
 
     # Flag to track if any certificate has a banned serial in the subject
     has_banned_serial = False
+    
+    # Flag to track if any certificate has a leaked serial
+    has_leaked_serial = False
 
     # Fetch the revocation list once to avoid multiple network calls
     try:
@@ -313,9 +347,15 @@ async def keybox_check(bot, message, document):
 
         # Check if the certificate's serial number is banned
         if serial_number_string in banned_serials:
-            reply += "\n❌ This serial number is banned. The keybox cannot be used for strong integrity."
+            reply += "\n❌ This serial number is banned. 🔴 This key box *can't be used* for strong integrity"
             has_banned_serial = True
             logger.warning(f"Certificate serial number {serial_number_string} is banned.")
+        
+        # Check if the certificate's serial number is in the leaks.txt file
+        if serial_number_string in leaked_serials:
+            reply += "\n⚠️ Leak detected: the keybox can be soft banned"
+            has_leaked_serial = True
+            logger.warning(f"Certificate serial number {serial_number_string} is in leaks.txt.")
         
         # Check the revocation status for the current certificate
         status = status_json['entries'].get(serial_number_string, None)
@@ -403,7 +443,8 @@ async def keybox_check(bot, message, document):
     is_keychain_valid = flag
     is_correct_root = certificate_type in ["hardware", "knox"]
     is_not_revoked = not revoked_certificates
-    is_not_banned = not has_banned_serial  
+    is_not_banned = not has_banned_serial
+    is_not_leaked = not has_leaked_serial  
 
     # Determine if the keychain is valid based on all conditions
     is_valid_keychain = (
@@ -412,7 +453,8 @@ async def keybox_check(bot, message, document):
         is_keychain_valid and
         is_not_revoked and
         is_correct_root and
-        is_not_banned  
+        is_not_banned and
+        is_not_leaked
     )
 
     # --- Begin: Special serial check ---
@@ -457,7 +499,10 @@ async def keybox_check(bot, message, document):
 
     if special_serial_violation:
         reply += "\n❌ Serial f92009e853b6b045 is only allowed on certificate 3 or 4 if more than 3."
-        reply += "\n🔴 This key box *can't be used* for strong integrity"
+        if has_leaked_serial and not has_banned_serial:
+            reply += "\n🟡 Since this keybox was in a leak it can be soft banned and if yes you will get only device integrity"
+        else:
+            reply += "\n🔴 This key box *can't be used* for strong integrity"
         is_valid_keychain = False
     # --- End: Special serial check ---
 
@@ -484,6 +529,9 @@ async def keybox_check(bot, message, document):
             
         )
     else:
-        reply += "\n🔴 This key box *can't be used* for strong integrity"
+        if has_leaked_serial and not has_banned_serial:
+            reply += "\n🟡 Since this keybox was in a leak it can be soft banned and if yes you will get only device integrity"
+        else:
+            reply += "\n🔴 This key box *can't be used* for strong integrity"
 
     await bot.reply_to(message, reply, parse_mode='Markdown')
